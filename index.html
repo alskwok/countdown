@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>精準倒數提示</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#2a313c;--text:#e6edf3;--muted:#8b949e;--accent:#3fb950;--danger:#f85149}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"PingFang HK","Noto Sans TC","Microsoft JhengHei",sans-serif}
+body{padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.wrap{max-width:560px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:22px;margin:6px 0 0}
+.sub{color:var(--muted);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;transition:background .08s,border-color .08s}
+.label{color:var(--muted);font-size:13px;margin-bottom:8px}
+#display{text-align:center;padding:22px 12px}
+#count{font:600 clamp(30px,10.5vw,56px)/1.15 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin:2px 0 6px}
+#display.pulse{border-color:#d29922}
+#display.go{background:#1a7f37;border-color:var(--accent)}
+#display.go #count{font-size:clamp(60px,26vw,120px)}
+#display.go .sub,#display.go .label{color:#d7ffe0}
+.row4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.row4 label{font-size:12px;color:var(--muted);text-align:center}
+input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 4px;font:600 20px ui-monospace,Menlo,monospace;text-align:center;outline:none}
+input:focus{border-color:#58a6ff}
+input:disabled{opacity:.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.stepper{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;margin-top:4px}
+.step{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;font-size:15px}
+.step:disabled{opacity:.5}
+.hint{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.4}
+.btns{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}
+button{font:600 17px/1 inherit;font-family:inherit;border-radius:12px;padding:15px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#04200c}
+button.danger{color:var(--danger);border-color:var(--danger)}
+button:disabled{opacity:.4}
+button.ghost{width:100%;margin-top:10px;font-size:15px;font-weight:500}
+.msg{color:#d29922;font-size:13px;margin-top:10px;min-height:18px}
+.pad{height:110px;border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:18px;font-weight:600;user-select:none;-webkit-user-select:none;touch-action:none;border:1px solid var(--line);padding:8px}
+.pad.idle{background:var(--bg)}
+.pad.wait{background:#5a1e1e;border-color:#8b2c2c}
+.pad.go{background:#1a7f37;border-color:var(--accent);font-size:28px}
+#rres{font-size:13px;color:var(--muted);margin-top:10px;min-height:20px}
+ul{margin:0;padding-left:20px;font-size:14px;color:#c9d1d9}
+li{margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>精準倒數提示</h1>
+    <div class="sub">到點用「長音 + 閃綠屏」提醒你按下按鈕</div>
+  </header>
+
+  <section class="card" id="display">
+    <div class="label" id="status">待命</div>
+    <div id="count">--:--:--.---</div>
+    <div class="sub" id="info">&nbsp;</div>
+  </section>
+
+  <section class="card">
+    <div class="label">提示時間（24 小時制，本機時區）</div>
+    <div class="row4">
+      <label>時<input id="h" inputmode="numeric" maxlength="2" value="06"></label>
+      <label>分<input id="m" inputmode="numeric" maxlength="2" value="59"></label>
+      <label>秒<input id="s" inputmode="numeric" maxlength="2" value="59"></label>
+      <label>毫秒<input id="ms" inputmode="numeric" maxlength="3" value="994"></label>
+    </div>
+
+    <div class="row2">
+      <div>
+        <div class="label" style="margin:0">提前量（毫秒）</div>
+        <div class="stepper">
+          <button class="step" data-t="lead" data-d="-10">−10</button>
+          <input id="lead" type="number" step="1" value="0">
+          <button class="step" data-t="lead" data-d="10">+10</button>
+        </div>
+        <div class="hint">提示音比目標時間早響這麼多毫秒。用「練習模式」自動算出；負數表示延後。</div>
+      </div>
+      <div>
+        <div class="label" style="margin:0">時鐘校正（毫秒）</div>
+        <div class="stepper">
+          <button class="step" data-t="offset" data-d="-10">−10</button>
+          <input id="offset" type="number" step="1" value="0">
+          <button class="step" data-t="offset" data-d="10">+10</button>
+        </div>
+        <div class="hint">裝置時鐘比標準時間快 80 毫秒就填 −80。</div>
+      </div>
+    </div>
+
+    <div class="btns">
+      <button id="start" class="primary">開始</button>
+      <button id="stop" class="danger" disabled>停止</button>
+    </div>
+    <button id="test" class="ghost">試音（先確認聽得到）</button>
+    <div class="msg" id="msg"></div>
+  </section>
+
+  <section class="card">
+    <div class="label">練習模式（自動算出你的提前量）</div>
+    <div class="hint" style="margin:0 0 10px">按「開始練習」後，跟著 5 聲短音的節拍，在長音響起的瞬間按下面的大按鈕。重複約 10 次，用跟實戰一樣的手指和姿勢。</div>
+    <button id="pstart" class="primary" style="width:100%">開始練習（約 7 秒後）</button>
+    <div class="pad idle" id="ppad" style="margin-top:12px">練習時按這裡</div>
+    <div id="pres" style="font-size:13px;color:var(--muted);margin-top:10px;line-height:1.6;min-height:20px"></div>
+    <div class="btns" style="grid-template-columns:2fr 1fr">
+      <button id="papply" disabled>套用為提前量</button>
+      <button id="preset" class="danger">清除</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">測被動反應時間（只供參考）</div>
+    <div class="pad idle" id="pad">點一下開始，變綠色立刻按</div>
+    <div id="rres"></div>
+    <div class="hint">這是「突然變綠才按」的被動反應，比跟著節拍按慢很多，不要直接當提前量，請用上面的練習模式。</div>
+  </section>
+
+  <section class="card">
+    <div class="label">使用提示</div>
+    <ul>
+      <li><b>最好把這頁開在小米平板上</b>，放在 iPhone 旁邊。你看著 iPhone 的 App，聽到長音就按。</li>
+      <li>要開著這個頁面保持在前景，螢幕自動鎖定請設為「永不」。</li>
+      <li>iPhone 要把音量調大；用喇叭，別用藍牙耳機（有延遲）。</li>
+      <li><b>iPhone 背景播放（實驗功能）：</b>按「開始」後可以切去別的 App 或鎖屏，頁面會用無聲音訊保持運行，並在鎖屏介面顯示播放控制。iOS 版本不同表現可能不同，請先設一個 1 分鐘後的時間實測，確認聲音真的會在背景響。</li>
+      <li>背景播放時請不要在控制中心按暫停，也不要把 Safari 劃掉。</li>
+      <li>iPhone 的網頁不支援震動，所以用聲音和閃屏提示。</li>
+      <li>裝置時間請開啟「自動設定」。想更準的話，用 time.is 對比兩台裝置，再填校正值。</li>
+      <li>提示音是 5 聲短音（倒數 5 到 1 秒）加 1 聲長音，長音就是「現在按」。先用練習模式校準提前量。</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var KEYS = ['h','m','s','ms','offset','lead'];
+
+  // 還原上次的設定
+  try {
+    var sv = JSON.parse(localStorage.getItem('cd-settings') || '{}');
+    KEYS.forEach(function(k){ if (sv[k] !== undefined) $(k).value = sv[k]; });
+  } catch(e) {}
+  function save(){
+    try {
+      var o = {};
+      KEYS.forEach(function(k){ o[k] = $(k).value; });
+      localStorage.setItem('cd-settings', JSON.stringify(o));
+    } catch(e) {}
+  }
+
+  function p2(n){ return String(n).padStart(2,'0'); }
+  function num(id){ var v = parseFloat($(id).value); return isFinite(v) ? v : 0; }
+
+  // 校正後的時鐘：開始時定錨，之後用 performance.now() 推進，避免被系統時鐘跳動影響
+  var aD = Date.now(), aP = performance.now(), offset = 0;
+  function now(){ return aD + (performance.now() - aP) + offset; }
+
+  function readTime(){
+    var h = parseInt($('h').value,10), m = parseInt($('m').value,10),
+        s = parseInt($('s').value,10), x = parseInt($('ms').value,10);
+    if ([h,m,s,x].some(Number.isNaN) || h<0 || h>23 || m<0 || m>59 || s<0 || s>59 || x<0 || x>999) return null;
+    return {h:h, m:m, s:s, x:x};
+  }
+  // 取得下一次出現的目標時刻；若提示時刻已過就順延一天
+  function nextTarget(t, lead, nowMs){
+    var d = new Date(nowMs);
+    d.setHours(t.h, t.m, t.s, t.x);
+    var tt = d.getTime();
+    if (tt - lead <= nowMs) tt += 86400000;
+    return tt;
+  }
+  function fmt(ms){
+    if (ms < 0) ms = 0;
+    var h = Math.floor(ms/3600000), m = Math.floor(ms%3600000/60000),
+        s = Math.floor(ms%60000/1000), x = Math.floor(ms%1000);
+    return p2(h)+':'+p2(m)+':'+p2(s)+'.'+String(x).padStart(3,'0');
+  }
+  function clockStr(ts){
+    var d = new Date(ts);
+    return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())+'.'+String(d.getMilliseconds()).padStart(3,'0');
+  }
+  function dayLabel(ts){
+    return new Date(ts).toDateString() === new Date(now()).toDateString() ? '今天' : '明天';
+  }
+  function msg(t){ $('msg').textContent = t || ''; }
+
+  // ---------- 聲音 ----------
+  var ctx = null, nodes = [];
+  function ensureCtx(){
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e) {}
+    if (!ctx) {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return false;
+      try { ctx = new C(); } catch(e) { return false; }
+    }
+    if (ctx.state === 'suspended') { try { ctx.resume(); } catch(e) {} }
+    return true;
+  }
+  function beep(when, freq, dur){
+    if (!ctx) return;
+    if (when < ctx.currentTime) when = ctx.currentTime;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.9, when + 0.005);
+    g.gain.setValueAtTime(0.9, when + dur - 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(when); o.stop(when + dur + 0.05);
+    nodes.push(o);
+    o.onended = function(){ var i = nodes.indexOf(o); if (i >= 0) nodes.splice(i,1); };
+  }
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden && ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch(e) {} }
+  });
+
+  // ---------- 狀態 ----------
+  var running = false, scheduled = false, lastDone = false;
+  var cue = 0, target = 0, targetLabel = '今天', wake = null;
+
+  function setLocked(b){
+    ['h','m','s','ms','offset','lead','start'].forEach(function(id){ $(id).disabled = b; });
+    document.querySelectorAll('.step').forEach(function(el){ el.disabled = b; });
+    $('stop').disabled = !b;
+  }
+
+  function start(){
+    var t = readTime();
+    if (!t) { msg('時間格式不正確：時 0–23、分秒 0–59、毫秒 0–999。'); return; }
+    msg('');
+    if (!ensureCtx()) msg('這個瀏覽器不支援聲音，只會閃屏提示。');
+    startKeep();
+    offset = num('offset');
+    var lead = num('lead');
+    aD = Date.now(); aP = performance.now();
+    target = nextTarget(t, lead, now());
+    cue = target - lead;
+    targetLabel = dayLabel(target);
+    running = true; scheduled = false; lastDone = false; tickN = 0;
+    setLocked(true); save();
+    try {
+      if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function(w){ wake = w; }).catch(function(){});
+    } catch(e) {}
+    tick();
+  }
+  function stop(){
+    running = false;
+    setLocked(false);
+    nodes.slice().forEach(function(o){ try { o.stop(); } catch(e) {} });
+    nodes = [];
+    stopKeep();
+    try { if (wake) wake.release(); } catch(e) {}
+    wake = null;
+  }
+
+  // ---------- 背景保活（iOS）：循環播放無聲音訊，讓頁面切到背景或鎖屏後聲音仍可播放 ----------
+  var keep = null;
+  function makeSilence(){
+    var n = 8000, b = new ArrayBuffer(44 + n), v = new DataView(b);
+    function w(o, str){ for (var i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); }
+    w(0,'RIFF'); v.setUint32(4, 36 + n, true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+    v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36,'data'); v.setUint32(40, n, true);
+    for (var i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    return URL.createObjectURL(new Blob([b], {type: 'audio/wav'}));
+  }
+  function startKeep(){
+    try {
+      if (!keep) { keep = new Audio(makeSilence()); keep.loop = true; keep.setAttribute('playsinline', ''); }
+      var pr = keep.play();
+      if (pr && pr.catch) pr.catch(function(){});
+      if ('mediaSession' in navigator && window.MediaMetadata) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: '精準倒數運行中', artist: '請勿關閉' });
+      }
+    } catch(e) {}
+  }
+  function stopKeep(){ try { if (keep) keep.pause(); } catch(e) {} }
+
+  // 在提示前 6.5 秒以上，每約 2 秒重新對準一次音訊排程；最後 6.5 秒內不再改動。
+  // 這樣即使頁面在背景被節流，已排好的聲音仍會依最後一次排程播放。
+  var tickN = 0;
+  function scheduleAll(){
+    nodes.slice().forEach(function(o){ try { o.stop(); } catch(e) {} });
+    nodes = [];
+    if (!ctx) return;
+    var c0 = ctx.currentTime, n0 = now();
+    for (var k = 5; k >= 1; k--) {
+      var t = cue - k*1000;
+      if (t > n0 + 30) beep(c0 + (t - n0)/1000, 880, 0.08);
+    }
+    if (cue > n0 + 30) beep(c0 + (cue - n0)/1000, 1320, 0.5);
+  }
+  function tick(){
+    if (!running) return;
+    var rem = cue - now();
+    if (rem > 6500) {
+      if (!scheduled || (++tickN % 20 === 0)) { scheduleAll(); scheduled = true; }
+    } else if (!scheduled) {
+      scheduleAll(); scheduled = true;
+    }
+  }
+  setInterval(tick, 100);
+
+  // ---------- 畫面 ----------
+  var disp = $('display'), countEl = $('count'), statusEl = $('status'), infoEl = $('info');
+  function frame(){
+    var go = false, pulse = false;
+    if (!running) {
+      aD = Date.now(); aP = performance.now();
+      offset = num('offset');
+      var t = readTime(), lead = num('lead');
+      if (t) {
+        var tt = nextTarget(t, lead, now());
+        countEl.textContent = fmt(tt - lead - now());
+        statusEl.textContent = lastDone ? '已完成' : '待命（尚未開始）';
+        infoEl.textContent = '目標 ' + clockStr(tt) + '（' + dayLabel(tt) + '）· 現在 ' + clockStr(now());
+      } else {
+        countEl.textContent = '--:--:--.---';
+        statusEl.textContent = '時間格式不正確';
+        infoEl.textContent = ' ';
+      }
+    } else {
+      var rem = cue - now();
+      infoEl.textContent = '目標 ' + clockStr(target) + '（' + targetLabel + '）· 現在 ' + clockStr(now());
+      if (rem > 0) {
+        countEl.textContent = fmt(rem);
+        statusEl.textContent = rem <= 9000 ? '準備！' : '運行中，距離提示音';
+        pulse = rem < 5500 && (rem % 1000) > 880;
+      } else if (rem > -1500) {
+        go = true;
+        countEl.textContent = '按！';
+        statusEl.textContent = '現在';
+      } else {
+        lastDone = true;
+        stop();
+      }
+    }
+    disp.classList.toggle('go', go);
+    disp.classList.toggle('pulse', pulse);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- 事件 ----------
+  $('start').addEventListener('click', start);
+  $('stop').addEventListener('click', function(){ lastDone = false; stop(); });
+  $('test').addEventListener('click', function(){
+    if (!ensureCtx()) { msg('這個瀏覽器不支援聲音。'); return; }
+    msg('');
+    var c = ctx.currentTime + 0.05;
+    beep(c, 880, 0.08); beep(c + 0.5, 880, 0.08); beep(c + 1.0, 1320, 0.5);
+  });
+  KEYS.forEach(function(k){ $(k).addEventListener('input', save); });
+  document.querySelectorAll('.step').forEach(function(b){
+    b.addEventListener('click', function(){
+      var el = $(b.dataset.t);
+      el.value = (num(b.dataset.t) + parseInt(b.dataset.d,10));
+      save();
+    });
+  });
+
+  // ---------- 反應測試 ----------
+  var pad = $('pad'), rs = 'idle', rt0 = 0, rtimer = 0, rres = [];
+  function setPad(cls, txt){ pad.className = 'pad ' + cls; pad.textContent = txt; }
+  function updateRes(){
+    var avg = Math.round(rres.reduce(function(a,b){ return a+b; }, 0) / rres.length);
+    $('rres').textContent = '最近 ' + rres.length + ' 次：' + rres.join('、') + ' 毫秒；平均 ' + avg + ' 毫秒';
+  }
+  pad.addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    var tn = performance.now();
+    if (rs === 'idle') {
+      rs = 'wait';
+      setPad('wait', '等綠色出現…');
+      rtimer = setTimeout(function(){
+        rs = 'go';
+        setPad('go', '按！');
+        requestAnimationFrame(function(){ rt0 = performance.now(); });
+      }, 1500 + Math.random()*2500);
+    } else if (rs === 'wait') {
+      clearTimeout(rtimer);
+      rs = 'idle';
+      setPad('idle', '太早了！點一下重來');
+    } else if (rs === 'go') {
+      var r = Math.max(0, Math.round(tn - rt0));
+      rres.push(r);
+      if (rres.length > 5) rres.shift();
+      rs = 'idle';
+      setPad('idle', r + ' 毫秒 · 再點一下繼續');
+      updateRes();
+    }
+  });
+  // ---------- 練習模式 ----------
+  var ppad = $('ppad'), pstart = $('pstart'), pres = $('pres');
+  var pt = 0, pActive = false, pTapped = false, pHist = [];
+  function setPad2(cls, txt){ ppad.className = 'pad ' + cls; ppad.textContent = txt; }
+  function pStats(){
+    if (!pHist.length) { pres.textContent = ''; $('papply').disabled = true; return; }
+    var n = pHist.length;
+    var mean = pHist.reduce(function(a,b){ return a+b; }, 0) / n;
+    var sd = Math.sqrt(pHist.reduce(function(a,b){ return a + (b-mean)*(b-mean); }, 0) / n);
+    pres.textContent = '最近 ' + n + ' 次（正數＝按晚了）：' +
+      pHist.map(function(v){ return (v > 0 ? '+' : '') + Math.round(v); }).join('、') +
+      ' 毫秒；平均 ' + Math.round(mean) + ' 毫秒；離散 ±' + Math.round(sd) + ' 毫秒';
+    $('papply').disabled = n < 3;
+    $('papply').dataset.mean = Math.round(mean);
+  }
+  function runPractice(){
+    pActive = true; pTapped = false;
+    pt = performance.now() + 7000;
+    var c0 = ctx.currentTime;
+    for (var k = 5; k >= 1; k--) beep(c0 + (7 - k), 880, 0.08);
+    beep(c0 + 7, 1320, 0.5);
+    setPad2('wait', '跟著節拍…');
+    (function loop(){
+      if (!pActive) return;
+      var rem = pt - performance.now();
+      if (rem > -1500) {
+        if (rem <= 0 && !pTapped) setPad2('go', '按！');
+        requestAnimationFrame(loop);
+      } else {
+        pActive = false;
+        pstart.disabled = false;
+        if (!pTapped) setPad2('idle', '沒有按到，再來一次');
+      }
+    })();
+  }
+  pstart.addEventListener('click', function(){
+    if (running || pActive) return;
+    if (!ensureCtx()) { msg('這個瀏覽器不支援聲音。'); return; }
+    msg('');
+    pstart.disabled = true;
+    setPad2('wait', '準備…');
+    if (ctx.state === 'running') runPractice();
+    else ctx.resume().then(runPractice, function(){ pstart.disabled = false; msg('無法啟動聲音。'); });
+  });
+  ppad.addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    if (!pActive || pTapped) return;
+    var ts = e.timeStamp > 1e12 ? performance.now() : e.timeStamp;
+    var d = ts - pt;
+    if (d < -1000) { setPad2('wait', '太早了，跟著長音再按'); return; }
+    pTapped = true;
+    pHist.push(d);
+    if (pHist.length > 10) pHist.shift();
+    setPad2('idle', (d > 0 ? '晚了 ' : '早了 ') + Math.abs(Math.round(d)) + ' 毫秒');
+    pStats();
+  });
+  $('papply').addEventListener('click', function(){
+    $('lead').value = $('papply').dataset.mean;
+    save();
+    msg('已把提前量設為 ' + $('papply').dataset.mean + ' 毫秒。');
+  });
+  $('preset').addEventListener('click', function(){ pHist = []; pStats(); setPad2('idle', '練習時按這裡'); });
+})();
+</script>
+</body>
+</html>
